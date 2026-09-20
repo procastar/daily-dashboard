@@ -1,0 +1,47 @@
+pollen.error){el.textContent='Pollen unavailable';sub.textContent='check API key';return;}
+  const arr=state.pollen.dailyInfo?.[0]?.pollenTypeInfo || [];
+  const vals=arr.map(x=>({name:x.displayName||x.code,val:x.indexInfo?.value,cat:x.indexInfo?.category})).filter(x=>Number.isFinite(x.val));
+  if(!vals.length){el.textContent='Pollen low';sub.textContent='no active index';return;}
+  vals.sort((a,b)=>b.val-a.val); const top=vals[0]; el.textContent=`Pollen ${top.val}/5`; sub.textContent=`${top.name} · ${top.cat||'active'}`;
+}
+
+function currentHourIndex(){
+  if(!state.weather?.hourly?.time) return -1; const now=Date.now(); let best=-1,bestDiff=Infinity; state.weather.hourly.time.forEach((t,i)=>{const d=Math.abs(new Date(t).getTime()-now);if(d<bestDiff){best=i;bestDiff=d}}); return best;
+}
+function todaySlice(){
+  const w=state.weather; if(!w?.hourly?.time)return {idx:[],times:[]}; const now=new Date(); const day=now.toISOString().slice(0,10); const idx=[]; w.hourly.time.forEach((t,i)=>{if(t.startsWith(day))idx.push(i)}); return {idx,times:idx.map(i=>w.hourly.time[i])};
+}
+function getTodayPeak(arrName){
+  const w=state.weather, {idx}=todaySlice(); if(!w?.hourly?.[arrName]||!idx.length)return null; let max=-Infinity,ii=idx[0]; idx.forEach(i=>{const v=w.hourly[arrName][i];if(v!=null&&v>max){max=v;ii=i}}); return {value:max,index:ii,time:w.hourly.time[ii]};
+}
+function renderWeather(){
+  const w=state.weather; if(!w)return;
+  const c=w.current||{}, d=w.daily||{}; const info=weatherInfo(c.weather_code);
+  $('#glTemp').textContent=`${round(c.temperature_2m)}°`; $('#glHigh').textContent=`high ${round(d.temperature_2m_max?.[0])}°`;
+  $('#currentTemp').textContent=`${round(c.temperature_2m)}°`; $('#currentDesc').textContent=info[0]; $('#currentIcon').textContent=info[1]; $('#feelsLine').textContent=`Feels like ${round(c.apparent_temperature)}°`;
+  $('#humidity').textContent=`${round(c.relative_humidity_2m)}%`; $('#wind').textContent=`${round(c.wind_speed_10m)} mph`; $('#clouds').textContent=`${round(c.cloud_cover)}%`;
+  const hi=currentHourIndex(); const vis=hi>=0?w.hourly.visibility?.[hi]:null; $('#visibility').textContent=vis!=null?`${round(miles(vis),1)} mi`:'--';
+  const uv=getTodayPeak('uv_index'); $('#glUv').textContent=`UV ${round(uv?.value,1)}`; $('#glUvText').textContent=uv?`peak ${fmtTime(uv.time)}`:'today';
+  const rain=getTodayPeak('precipitation_probability'); $('#glRain').textContent=`${round(rain?.value)}%`; $('#glRainText').textContent=rain?`peak ${fmtTime(rain.time)}`:'today'; $('#rainPeakLabel').textContent=rain?`${round(rain.value)}% peak · ${fmtTime(rain.time)}`:'--';
+  $('#weatherUpdated').textContent=`Updated ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`; $('#conditionUpdated').textContent='Live';
+  renderWeatherAnimation(c.weather_code,c.is_day); renderRainChart(); renderForecast();
+}
+function renderWeatherAnimation(code,isDay){ const el=$('#weatherGlance'); el.classList.remove('sunny','cloudy','rain','storm','night'); if(!isDay){el.classList.add('night');return;} if([95,96,99].includes(code))el.classList.add('storm'); else if([51,53,55,61,63,65,66,67,80,81,82].includes(code))el.classList.add('rain'); else if([0,1].includes(code))el.classList.add('sunny'); else el.classList.add('cloudy'); }
+function renderRainChart(){
+  const svg=$('#rainChart'), w=state.weather, {idx}=todaySlice(); if(!w||!idx.length){svg.innerHTML='';return;} const hours=idx.filter((_,n)=>n%2===0); const vals=hours.map(i=>w.hourly.precipitation_probability?.[i]??0); const W=520,H=130,pad=28; const pts=vals.map((v,i)=>{const x=pad+(W-2*pad)*(i/Math.max(1,vals.length-1)), y=H-pad-(H-2*pad)*(v/100);return [x,y]}); const line=pts.map(p=>p.join(',')).join(' '); const fill=`${pad},${H-pad} ${line} ${W-pad},${H-pad}`; const labels=hours.map((i,n)=>`<text x="${pts[n][0]}" y="${H-8}" text-anchor="middle" fill="#8195b2" font-size="9">${new Date(w.hourly.time[i]).toLocaleTimeString([],{hour:'numeric'})}</text>`).join(''); svg.innerHTML=`<line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="rgba(153,183,227,.15)"/><polygon points="${fill}" fill="rgba(77,159,255,.08)"/><polyline points="${line}" fill="none" stroke="#4d9fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${labels}`;
+}
+function renderForecast(){
+  const w=state.weather; if(!w?.daily)return; const start=state.forecastWeek?7:0,end=Math.min(start+7,w.daily.time.length); const rows=[]; for(let i=start;i<end;i++){const info=weatherInfo(w.daily.weather_code[i]); const d=new Date(`${w.daily.time[i]}T12:00:00`); rows.push(`<div class="card forecast-day"><div class="wd">${d.toLocaleDateString([],{weekday:'short'})}</div><div class="date">${d.toLocaleDateString([],{month:'short',day:'numeric'})}</div><div class="wx">${info[1]}</div><div class="hi">${round(w.daily.temperature_2m_max[i])}°</div><div class="lo">${round(w.daily.temperature_2m_min[i])}°</div><div class="pop">${round(w.daily.precipitation_probability_max[i])}%</div></div>`)} $('#forecastGrid').innerHTML=rows.join('');
+  $('#forecastTitle').textContent=state.forecastWeek?'Days 8–14':'Next 7 days'; $('#forecastConfidence').textContent=state.forecastWeek?'Lower confidence':'Higher confidence'; $('#forecastToggle').textContent=state.forecastWeek?'← Next 7 days':'Days 8–14 →';
+  const temps=w.daily.temperature_2m_max.slice(start,end), pops=w.daily.precipitation_probability_max.slice(start,end); const warm=Math.max(...temps), cool=Math.min(...w.daily.temperature_2m_min.slice(start,end)), rain=Math.max(...pops); $('#forecastSummary').innerHTML=`<div class="card"><div class="tiny muted">Warmest</div><strong>${round(warm)}°</strong></div><div class="card"><div class="tiny muted">Rain watch</div><strong>${round(rain)}%</strong></div><div class="card"><div class="tiny muted">Coolest AM</div><strong>${round(cool)}°</strong></div>`;
+}
+
+function astronomyReady(){ return typeof window.Astronomy !== 'undefined'; }
+function renderSky(){
+  if(!state.location)return; const A=window.Astronomy; const w=state.weather; const now=new Date();
+  if(astronomyReady()){
+    try{
+      const angle=A.MoonPhase(now), name=moonNameFromAngle(angle), illum=Math.round(illuminationFromAngle(angle)*100); $('#moonPhase').textContent=`${phaseEmoji(name)} ${name}`; $('#moonIllum').textContent=`${illum}% illuminated`; const pct=clamp(illum,0,100); $('#moonDisc').style.background=`linear-gradient(90deg,#f4f6ff ${pct}%,#273044 ${pct}%)`;
+      const q=A.SearchMoonQuarter(now), names=['New Moon','First Quarter','Full Moon','Third Quarter']; if(q){$('#nextMoonPhase').textContent=`${phaseEmoji(names[q.quarter])} ${names[q.quarter]}`;$('#nextMoonDate').textContent=q.time.date.toLocaleDateString([],{month:'short',day:'numeric'});}
+      const obs=new A.Observer(state.location.lat,state.location.lon,0); const dusk=A.SearchAltitude(A.Body.Sun,obs,-1,now,1,-6); if(dusk)$('#civilDusk').textContent=fmtTime(dusk.date);
+      const events=[]; let mq=q; for(let i=0;i<4 && mq;i++){event
