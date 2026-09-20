@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07101f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Daily Dash" />
+  <title>Daily Dashboard</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Daily Dashboard</div>
+        <h1 id="mainTitle">Loading…</h1>
+        <div class="subline"><span id="placeLabel">Live location</span><span>·</span><span id="liveStatus">waiting</span></div>
+      </div>
+      <div class="top-actions">
+        <span class="pill"><span class="status-dot"></span>Live</span>
+        <span id="clock" class="pill">--:--</span>
+        <button id="settingsBtn" class="icon-btn" aria-label="Settings">⚙︎</button>
+      </div>
+    </header>
+
+    <section class="weather-glance weather-sky" id="weatherGlance">
+      <div class="weather-animation" aria-hidden="true">
+        <span class="sun"></span><span class="cloud c1"></span><span class="cloud c2"></span><span class="drops"></span><span class="stars"></span>
+      </div>
+      <div class="weather-content">
+        <div class="section-head"><div><div class="eyebrow">Weather at a glance</div><div id="weatherUpdated" class="tiny muted">Waiting for location…</div></div><button id="refreshWeather" class="ghost-btn">↻</button></div>
+        <div class="glance-grid">
+          <div class="glance-item"><span>🌡️</span><div><strong id="glTemp">--°</strong><small id="glHigh">high --°</small></div></div>
+          <div class="glance-item"><span>☀️</span><div><strong id="glUv">UV --</strong><small id="glUvText">--</small></div></div>
+          <div class="glance-item"><span>🌧️</span><div><strong id="glRain">--%</strong><small id="glRainText">today</small></div></div>
+          <div class="glance-item"><span>🌿</span><div><strong id="glPollen">Pollen --</strong><small id="glPollenText">optional source</small></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pulse" class="pulse-slot"></section>
+
+    <nav class="main-tabs surface" aria-label="Dashboard sections">
+      <button class="main-tab active" data-page="0">📰 <span>Feeds</span></button>
+      <button class="main-tab" data-page="1">🌦️ <span>Weather</span></button>
+      <button class="main-tab" data-page="2">🌙 <span>Sky</span></button>
+      <button class="main-tab" data-page="3">📷 <span>Photography</span></button>
+    </nav>
+
+    <section class="pager-shell" id="pagerShell">
+      <div class="pager-track" id="pagerTrack">
+        <article class="page" id="feedsPage">
+          <section class="surface section-card">
+            <div class="section-head">
+              <div><div class="eyebrow">Signal feed</div><h2>Worth your attention</h2><div class="tiny muted"><span id="feedUpdated">Cached prototype</span> · <span id="newCount">3 new</span></div></div>
+              <button id="refreshFeed" class="ghost-btn">↻ Refresh</button>
+            </div>
+            <div class="chip-row">
+              <button class="chip active" data-feed="tech">Tech / AI</button>
+              <button class="chip" data-feed="gaming">Gaming</button>
+              <button class="chip" data-feed="interesting">Interesting</button>
+            </div>
+            <div id="feedRows" class="rows"></div>
+            <div class="meta-row"><span class="pill">fresh &lt;10 min</span><span class="pill">auto ~15 min</span><span class="pill">24h dedupe cache</span></div>
+          </section>
+
+          <section class="surface section-card">
+            <div class="section-head"><div><div class="eyebrow">Reddit pulse</div><h2>Your corners of the internet</h2></div><div class="chip-row compact"><button class="chip active" data-sort="top">Top</button><button class="chip" data-sort="hot">Hot</button><button class="chip" data-sort="new">New</button></div></div>
+            <div class="subchips"><span>r/OpenAI</span><span>r/Microsoft</span><span>r/gaming</span><span>r/PS5</span><span>r/XboxSeriesX</span></div>
+            <div id="redditRows" class="rows"></div>
+            <div class="tiny muted">Feed connectors are still prototype-only in this build. Weather and commute are the live pieces.</div>
+          </section>
+        </article>
+
+        <article class="page" id="weatherPage">
+          <section class="surface section-card">
+            <div class="section-head"><div><div class="eyebrow">Conditions</div><h2 id="conditionLabel">Live weather</h2></div><span id="conditionUpdated" class="pill">--</span></div>
+            <div class="conditions-grid">
+              <div class="big-weather card"><div><div class="eyebrow">Now</div><div class="temp-line"><strong id="currentTemp">--°</strong><span id="currentDesc">Waiting…</span></div><div id="feelsLine" class="muted">Feels like --°</div></div><div class="weather-icon" id="currentIcon">☁️</div></div>
+              <div class="stats-grid">
+                <div class="card metric-card"><small>Humidity</small><strong id="humidity">--%</strong></div>
+                <div class="card metric-card"><small>Wind</small><strong id="wind">-- mph</strong></div>
+                <div class="card metric-card"><small>Clouds</small><strong id="clouds">--%</strong></div>
+                <div class="card metric-card"><small>Visibility</small><strong id="visibility">-- mi</strong></div>
+              </div>
+            </div>
+            <div class="chart-wrap"><div class="section-head mini"><strong>Rain chance today</strong><span id="rainPeakLabel" class="muted tiny">--</span></div><svg id="rainChart" viewBox="0 0 520 130" role="img" aria-label="Hourly rain chance"></svg></div>
+          </section>
+
+          <section class="surface section-card">
+            <div class="section-head"><div><div class="eyebrow">Weather outlook</div><h2 id="forecastTitle">Next 7 days</h2></div><div class="forecast-actions"><span id="forecastConfidence" class="pill">Higher confidence</span><button id="forecastToggle" class="ghost-btn">Days 8–14 →</button></div></div>
+            <div id="forecastGrid" class="forecast-grid"></div>
+            <div id="forecastSummary" class="forecast-summary"></div>
+          </section>
+        </article>
+
+        <article class="page" id="skyPage">
+          <section class="surface section-card">
+            <div class="section-head"><div><div class="eyebrow">Sky & astronomy</div><h2>Tonight's sky</h2></div><span id="skyUpdated" class="pill">Calculated locally</span></div>
+            <div class="sky-grid">
+              <div class="card sky-card"><div class="eyebrow">Moon</div><div class="moon-line"><div id="moonDisc" class="moon-disc"></div><div><strong id="moonPhase">--</strong><div id="moonIllum" class="muted">-- illuminated</div></div></div><div id="moonTimes" class="tiny muted divider-top">Moonrise -- · Moonset --</div></div>
+              <div class="card sky-card"><div class="eyebrow">Sun</div><div class="two-col"><div><small>Sunrise</small><strong id="sunrise">--</strong></div><div><small>Sunset</small><strong id="sunset">--</strong></div></div><div class="divider-top"><small>Twilight ends</small><strong id="civilDusk">--</strong></div></div>
+              <div class="card sky-card"><div class="eyebrow">Night sky</div><strong id="skyQuality" class="large">--</strong><div id="skyQualityText" class="muted">Waiting for weather…</div><div class="divider-top"><small>Moon + clouds</small><strong id="skyInterference">--</strong></div></div>
+              <div class="card sky-card"><div class="eyebrow">Next major phase</div><strong id="nextMoonPhase" class="large">--</strong><div id="nextMoonDate" class="muted">--</div><div class="divider-top"><small>Next eclipse</small><strong id="nextEclipse">Calculating…</strong></div></div>
+            </div>
+          </section>
+
+          <section class="surface section-card">
+            <div class="section-head"><div><div class="eyebrow">Upcoming sky events</div><h2>Worth putting on your radar</h2></div><span class="pill">Local calculations</span></div>
+            <div id="skyEvents" class="event-list"></div>
+          </section>
+        </article>
+
+        <article class="page" id="photoPage">
+          <section class="surface section-card">
+            <div class="section-head"><div><div class="eyebrow">Photography conditions</div><h2>Is it worth taking the camera?</h2></div><span id="photoRating" class="pill">--</span></div>
+            <div class="photo-grid">
+              <div class="card photo-hero"><div class="eyebrow">Best photo window</div><strong id="photoWindow">--</strong><div id="photoWindowText" class="muted">Waiting for weather + light…</div><div class="three-col divider-top"><div><small>Golden</small><strong id="goldenHour">--</strong></div><div><small>Blue</small><strong id="blueHour">--</strong></div><div><small>Sunset</small><strong id="photoSunset">--</strong></div></div></div>
+              <div class="card"><div class="eyebrow">Shooting conditions</div><div class="photo-metrics"><div><small>Cloud texture</small><strong id="cloudTexture">--</strong><div class="bar"><span id="cloudBar"></span></div></div><div><small>Visibility</small><strong id="photoVis">--</strong><div class="bar"><span id="visBar"></span></div></div><div><small>Wind</small><strong id="photoWind">--</strong><div class="muted tiny" id="windNote">--</div></div><div><small>Dew / fog</small><strong id="dewRisk">--</strong><div class="muted tiny" id="dewNote">--</div></div></div></div>
+            </div>
+            <div class="photo-cards"><div class="card"><small>Sunset color</small><strong id="sunsetPotential">--</strong></div><div class="card"><small>Landscape</small><strong id="landscapeRating">--</strong></div><div class="card"><small>Moon photos</small><strong id="moonPhotoRating">--</strong></div><div class="card"><small>Stars</small><strong id="starPhotoRating">--</strong></div></div>
+          </section>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <section id="routeDrawer" class="route-drawer" aria-hidden="true">
+    <div class="route-head"><div><div class="eyebrow">Route map</div><h2 id="routeMapTitle">Commute</h2><div id="routeMapMeta" class="tiny muted"></div></div><button id="closeRoute" class="icon-btn">×</button></div>
+    <div id="routeMap"></div>
+    <div id="routeIncidentList" class="route-incidents"></div>
+  </section>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" class="settings-card">
+      <div class="section-head"><div><div class="eyebrow">Live setup</div><h2>Dashboard settings</h2></div><button class="icon-btn" value="cancel">×</button></div>
+      <p class="muted settings-copy">Weather works without a key. For live traffic, add a Mapbox public access token. It stays in this browser's local storage.</p>
+      <label>Mapbox public token<input id="mapboxToken" type="password" autocomplete="off" placeholder="pk.…" /></label>
+      <label>Westover destination<input id="westoverAddress" type="text" autocomplete="off" placeholder="Saved only in this browser" /></label>
+      <label>TRP destination<input id="trpAddress" type="text" autocomplete="off" placeholder="Saved only in this browser" /></label>
+      <label>Google Pollen API key <span class="muted">(optional)</span><input id="pollenKey" type="password" autocomplete="off" placeholder="Optional" /></label>
+      <div class="settings-row"><button id="locateBtn" type="button" class="primary-btn">Use live location</button><button id="setHomeBtn" type="button" class="ghost-btn">Set home = current location</button></div>
+      <div class="card privacy-note"><strong>Privacy</strong><div class="tiny muted">Your saved home is stored as coordinates only in localStorage on this device. The visible dashboard never prints your home address.</div></div>
+      <div class="settings-row end"><button id="saveSettings" value="default" class="primary-btn">Save</button></div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
