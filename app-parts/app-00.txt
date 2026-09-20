@@ -1,0 +1,116 @@
+import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.mjs';
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+
+const DESTINATIONS = {
+  westover: { label: 'Westover Hills' },
+  trp: { label: 'TRP' }
+};
+
+const store = {
+  get(k, fallback=null){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
+  set(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+};
+
+const state = {
+  location: null,
+  weather: null,
+  pollen: null,
+  site: 'westover',
+  routes: {},
+  map: null,
+  mapLoaded: false,
+  activeRoute: null,
+  page: 0,
+  forecastWeek: 0,
+  feed: 'tech',
+  redditSort: 'top'
+};
+
+const WMO = {
+  0:['Clear','☀️'],1:['Mostly clear','🌤️'],2:['Partly cloudy','⛅'],3:['Overcast','☁️'],
+  45:['Fog','🌫️'],48:['Rime fog','🌫️'],51:['Light drizzle','🌦️'],53:['Drizzle','🌦️'],55:['Heavy drizzle','🌧️'],
+  61:['Light rain','🌦️'],63:['Rain','🌧️'],65:['Heavy rain','🌧️'],66:['Freezing rain','🌧️'],67:['Freezing rain','🌧️'],
+  71:['Light snow','🌨️'],73:['Snow','🌨️'],75:['Heavy snow','🌨️'],77:['Snow grains','🌨️'],
+  80:['Rain showers','🌦️'],81:['Rain showers','🌧️'],82:['Heavy showers','🌧️'],85:['Snow showers','🌨️'],86:['Heavy snow showers','🌨️'],
+  95:['Thunderstorms','⛈️'],96:['Thunderstorms','⛈️'],99:['Severe thunderstorms','⛈️']
+};
+
+function weatherInfo(code){ return WMO[code] || ['Weather','🌤️']; }
+function round(n,d=0){ if(n==null || Number.isNaN(Number(n))) return '--'; const p=10**d; return Math.round(Number(n)*p)/p; }
+function fmtTime(iso){ if(!iso) return '--'; const d=new Date(iso); if(Number.isNaN(d.getTime())) return '--'; return d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+function fmtDate(date){ return new Date(date).toLocaleDateString([], {month:'short',day:'numeric'}); }
+function clamp(n,a,b){ return Math.max(a,Math.min(b,n)); }
+function miles(m){ return m/1609.344; }
+function mins(sec){ return Math.round(sec/60); }
+function haversine(a,b){ const R=3958.8,toRad=x=>x*Math.PI/180; const dLat=toRad(b.lat-a.lat),dLon=toRad(b.lon-a.lon); const q=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(q)); }
+function localISOAt(hour, minute=0){ const d=new Date(); d.setHours(hour,minute,0,0); const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'),h=String(hour).padStart(2,'0'),mi=String(minute).padStart(2,'0'); return `${y}-${m}-${day}T${h}:${mi}`; }
+function moonNameFromAngle(angle){
+  const a=((angle%360)+360)%360;
+  if(a<22.5||a>=337.5)return 'New Moon';
+  if(a<67.5)return 'Waxing crescent';
+  if(a<112.5)return 'First quarter';
+  if(a<157.5)return 'Waxing gibbous';
+  if(a<202.5)return 'Full Moon';
+  if(a<247.5)return 'Waning gibbous';
+  if(a<292.5)return 'Third quarter';
+  return 'Waning crescent';
+}
+function illuminationFromAngle(angle){ return (1-Math.cos(angle*Math.PI/180))/2; }
+function phaseEmoji(name){ if(name.includes('New'))return '🌑'; if(name.includes('First'))return '🌓'; if(name.includes('Full'))return '🌕'; if(name.includes('Third'))return '🌗'; if(name.includes('Waxing crescent'))return '🌒'; if(name.includes('Waxing gibbous'))return '🌔'; if(name.includes('Waning gibbous'))return '🌖'; return '🌘'; }
+
+function tickClock(){ $('#clock').textContent = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
+setInterval(tickClock, 30000); tickClock();
+
+function liveMessage(msg){ $('#liveStatus').textContent = msg; }
+
+async function getLocation(force=false){
+  const cached = store.get('dd_location');
+  if(!force && cached && Date.now()-cached.savedAt < 30*60*1000){ state.location=cached; renderAll(); return cached; }
+  if(!navigator.geolocation){ liveMessage('location unsupported'); throw new Error('Geolocation is not supported in this browser.'); }
+  liveMessage('requesting location…');
+  const pos = await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:12000,maximumAge:60000}));
+  state.location = {lat:pos.coords.latitude, lon:pos.coords.longitude, accuracy:pos.coords.accuracy, savedAt:Date.now()};
+  store.set('dd_location', state.location);
+  liveMessage(`live · ±${Math.round(pos.coords.accuracy)}m`);
+  await Promise.allSettled([loadWeather(true), loadPollen(true), primeDestinations()]);
+  autoDetectSite();
+  await refreshPulseRoutes();
+  renderAll();
+  return state.location;
+}
+
+function weatherCacheKey(){ if(!state.location)return null; return `dd_weather_${state.location.lat.toFixed(2)}_${state.location.lon.toFixed(2)}`; }
+async function loadWeather(force=false){
+  if(!state.location) return;
+  const key=weatherCacheKey(); const cached=store.get(key);
+  if(!force && cached && Date.now()-cached.savedAt < 10*60*1000){ state.weather=cached.data; renderWeather(); renderPulse(); renderSky(); renderPhoto(); return; }
+  $('#weatherUpdated').textContent='Refreshing…';
+  const {lat,lon}=state.location;
+  const current='temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,is_day';
+  const hourly='temperature_2m,precipitation_probability,weather_code,cloud_cover,visibility,dew_point_2m,wind_speed_10m,wind_gusts_10m,uv_index';
+  const daily='weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,sunrise,sunset,moonrise,moonset,moon_phase';
+  const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=${current}&hourly=${hourly}&daily=${daily}&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=16`;
+  const r=await fetch(url); if(!r.ok) throw new Error(`Weather request failed (${r.status})`); const data=await r.json();
+  state.weather=data; store.set(key,{savedAt:Date.now(),data});
+  renderWeather(); renderPulse(); renderSky(); renderPhoto();
+}
+
+async function loadPollen(force=false){
+  if(!state.location) return;
+  const key=store.get('dd_pollen_key','');
+  if(!key){ state.pollen=null; renderPollen(); return; }
+  const cacheKey=`dd_pollen_${state.location.lat.toFixed(2)}_${state.location.lon.toFixed(2)}`; const cached=store.get(cacheKey);
+  if(!force && cached && Date.now()-cached.savedAt < 60*60*1000){state.pollen=cached.data;renderPollen();return;}
+  try{
+    const u=`https://pollen.googleapis.com/v1/forecast:lookup?key=${encodeURIComponent(key)}&location.longitude=${state.location.lon}&location.latitude=${state.location.lat}&days=1&plantsDescription=false`;
+    const r=await fetch(u); if(!r.ok) throw new Error('Pollen API'); const data=await r.json(); state.pollen=data; store.set(cacheKey,{savedAt:Date.now(),data});
+  }catch(e){ state.pollen={error:true}; }
+  renderPollen();
+}
+
+function renderPollen(){
+  const el=$('#glPollen'), sub=$('#glPollenText');
+  if(!state.pollen){ el.textContent='Pollen --'; sub.textContent='add source in settings'; return; }
+  if(!state.
