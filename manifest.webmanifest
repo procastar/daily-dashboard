@@ -1,0 +1,13 @@
+{
+  "name": "Daily Dashboard",
+  "short_name": "Daily Dash",
+  "description": "Live weather, commute, sky, photography and personal signal dashboard.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#050914",
+  "theme_color": "#07101f",
+  "icons": [
+    {"src":"./icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
