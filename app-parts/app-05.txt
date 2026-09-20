@@ -1,0 +1,13 @@
+.catch(e=>liveMessage(e.message));
+$('#setHomeBtn').onclick=()=>{if(!state.location){alert('Get your live location first.');return;}store.set('dd_home',{lat:state.location.lat,lon:state.location.lon});$('#setHomeBtn').textContent='Home saved ✓';};
+$('#saveSettings').onclick=()=>{store.set('dd_mapbox_token',$('#mapboxToken').value.trim());store.set('dd_westover_address',$('#westoverAddress').value.trim());store.set('dd_trp_address',$('#trpAddress').value.trim());store.set('dd_pollen_key',$('#pollenKey').value.trim());localStorage.removeItem('dd_dest_westover');localStorage.removeItem('dd_dest_trp');setTimeout(async()=>{await primeDestinations();autoDetectSite();await Promise.allSettled([loadPollen(true),refreshPulseRoutes()]);},100);};
+
+async function boot(){
+  if('serviceWorker' in navigator && location.protocol!=='file:'){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+  renderFeeds(); renderPages();
+  const cachedLoc=store.get('dd_location'); if(cachedLoc){state.location=cachedLoc;liveMessage('cached location');}
+  try{await getLocation(false);}catch(e){liveMessage('tap ⚙︎ to enable location'); if(cachedLoc){await loadWeather(false).catch(()=>{});}}
+  if(state.location){await Promise.allSettled([loadWeather(false),loadPollen(false),primeDestinations()]); autoDetectSite();}
+  renderAll();
+}
+boot();
